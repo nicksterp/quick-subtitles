@@ -2,11 +2,15 @@ import argparse
 import moviepy.editor as mp
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, AudioFileClip
 from datasets import load_dataset
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+#from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 import torch
 import os
+# https://github.com/linto-ai/whisper-timestamped
+import whisper_timestamped as whisper
+
 def main(input_path, output_path, save_timestamps_path):
     # Extract audio from video
+    """
     extract_audio_from_video(input_path)
 
     # Generate timestamps with transcriptions from audio
@@ -18,8 +22,11 @@ def main(input_path, output_path, save_timestamps_path):
     if save_timestamps_path:
         with open(save_timestamps_path, "w") as f:
             f.write(str(timestamps))
+    """
 
     # Generate video with captions
+    with open("captions.txt", "r") as f:
+        timestamps = eval(f.read())
     generate_video(timestamps, input_path, output_path)
 
     # Delete tmp/audio.mp3
@@ -34,32 +41,9 @@ def extract_audio_from_video(input_path):
 
 def generate_timestamps(input_path, language="en"):
     print("Generating timestamps...")
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-
-    model_id = "openai/whisper-large-v3"
-
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        model_id, torch_dtype=torch_dtype, low_cpu_mem_usage=True, use_safetensors=True
-    )
-    model.to(device)
-
-    processor = AutoProcessor.from_pretrained(model_id)
-
-    pipe = pipeline(
-        "automatic-speech-recognition",
-        model=model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-        max_new_tokens=128,
-        chunk_length_s=30,
-        batch_size=16,
-        return_timestamps=True,
-        torch_dtype=torch_dtype,
-        device=device,
-        generate_kwargs = {"language":f"<|{language}|>"}
-    )
-    result = pipe("tmp/audio.mp3", return_timestamps=True)
+    audio = whisper.load_audio(input_path)
+    model = whisper.load_model("large", device="cpu")
+    result = whisper.transcribe(model, audio, language=language)
 
     return result
 
@@ -73,19 +57,24 @@ def generate_video(timestamps, input_path, output_path):
     captions = []
 
     # For each chunk in the timestamps
-    for chunk in timestamps['chunks']:
-        # Create a TextClip for the caption, centered horizontally
-        caption = TextClip(chunk['text'], fontsize=40, color='white', stroke_color='black', stroke_width=2, align='center', font='Arial-Bold', method='caption', size=video.size).set_position(('center', 'bottom'))
+    for chunk in timestamps['segments']:
 
-        # Set the start and end times for the caption
-        start_time, end_time = chunk['timestamp']
-        caption = caption.set_start(start_time).set_duration(end_time - start_time)
+        # Iterate through each word in the segment and create a caption
+        for word in chunk['words']:
+            # Create a TextClip for each word
+            word_caption = TextClip(word['text'], fontsize=40, color='white', stroke_color='black', stroke_width=2, align='center', font='Arial-Bold', method='caption', size=video.size).set_position(('center', 'bottom'))
+            
+            # Set the start and end times for the word caption
+            start_time, end_time = word['start'], word['end']
+            word_caption = word_caption.set_start(start_time).set_duration(end_time - start_time)
+            
+            # Add the word caption to the list
+            captions.append(word_caption)
 
-        # Add the caption to the list
-        captions.append(caption)
 
     # Overlay the captions on the video
     video = CompositeVideoClip([video] + captions)
+    video.duration = video.clips[0].duration
 
     # Write the video to a file
     video.write_videofile(output_path, codec='libx264', audio_codec='aac')
