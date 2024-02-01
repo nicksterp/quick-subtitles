@@ -76,7 +76,7 @@ def generate_video(line_timestamps, input_path, output_path):
     all_linelevel_splits = []
 
     for i, line in enumerate(line_timestamps):
-        print("Caption generation progress: ", i, "/", len(line_timestamps))
+        update_progress(i / (len(line_timestamps)-1))
         out_clips, positions = create_caption(line, frame_size)
 
         max_width = 0
@@ -89,13 +89,14 @@ def generate_video(line_timestamps, input_path, output_path):
             max_width = max(max_width, x_pos + width)
             max_height = max(max_height, y_pos + height)
 
-        color_clip = ColorClip(size=(int(max_width * 1.1), int(max_height * 1.1)),
-                               color=(64, 64, 64))
-        color_clip = color_clip.set_opacity(.6)
-        color_clip = color_clip.set_start(line['start']).set_duration(line['end'] - line['start'])
+        color_clip = ColorClip(size=(int(max_width*1.1), int(max_height*1.1)),
+                       color=(64, 64, 64))
+        color_clip = color_clip.set_opacity(0)
+        color_clip = color_clip.set_start(line['start']).set_duration(line['end']-line['start'])
+
 
         clip_to_overlay = CompositeVideoClip([color_clip] + out_clips)
-        clip_to_overlay = clip_to_overlay.set_position("bottom")
+        clip_to_overlay = clip_to_overlay.set_position("top")
 
         all_linelevel_splits.append(clip_to_overlay)
 
@@ -166,7 +167,7 @@ def split_text_into_lines(data):
 
     return subtitles
 
-def create_caption(textJSON, framesize,font = "Helvetica",color='white', highlight_color='yellow',stroke_color='black',stroke_width=1.5):
+def create_caption(textJSON, framesize, font="Arial-Bold", color='white', stroke_color='black', stroke_width=2, align='center', method='caption', size=None):
     wordcount = len(textJSON['textcontents'])
     full_duration = textJSON['end']-textJSON['start']
 
@@ -183,14 +184,14 @@ def create_caption(textJSON, framesize,font = "Helvetica",color='white', highlig
 
     max_line_width = frame_width - 2 * (x_buffer)
 
-    fontsize = int(frame_height * 0.075) #7.5 percent of video height
+    fontsize = int(frame_height * 0.035) #7.5 percent of video height
 
     space_width = ""
     space_height = ""
 
     for index,wordJSON in enumerate(textJSON['textcontents']):
       duration = wordJSON['end']-wordJSON['start']
-      word_clip = TextClip(wordJSON['word'], font = font,fontsize=fontsize, color=color,stroke_color=stroke_color,stroke_width=stroke_width).set_start(textJSON['start']).set_duration(full_duration)
+      word_clip = TextClip(wordJSON['word'], font = font,fontsize=fontsize, color=color,stroke_color=stroke_color,stroke_width=stroke_width,align="center").set_start(textJSON['start']).set_duration(full_duration)
       word_clip_space = TextClip(" ", font = font,fontsize=fontsize, color=color).set_start(textJSON['start']).set_duration(full_duration)
       word_width, word_height = word_clip.size
       space_width,space_height = word_clip_space.size
@@ -215,7 +216,7 @@ def create_caption(textJSON, framesize,font = "Helvetica",color='white', highlig
       else:
             # Move to the next line
             x_pos = 0
-            y_pos = y_pos+ word_height+10
+            y_pos = y_pos+ word_height+1
             line_width = word_width + space_width
 
             # Store info of each word_clip created
@@ -238,7 +239,7 @@ def create_caption(textJSON, framesize,font = "Helvetica",color='white', highlig
       word_clips.append(word_clip)
       word_clips.append(word_clip_space)
 
-
+    highlight_color = 'yellow'
     for highlight_word in xy_textclips_positions:
 
       word_clip_highlight = TextClip(highlight_word['word'], font = font,fontsize=fontsize, color=highlight_color,stroke_color=stroke_color,stroke_width=stroke_width).set_start(highlight_word['start']).set_duration(highlight_word['duration'])
@@ -247,6 +248,16 @@ def create_caption(textJSON, framesize,font = "Helvetica",color='white', highlig
 
     return word_clips,xy_textclips_positions
 
+def update_progress(progress):
+    bar_length = 50  # Modify this to change the length of the progress bar
+    block = int(round(bar_length * progress))
+
+    # Construct the bar string
+    bar = "█" * block + "-" * (bar_length - block)
+    progress_message = f"Progress: [{bar}] {progress * 100:.2f}%"
+
+    # Print the progress bar, end='\r' makes sure it overwrites the current line
+    print(progress_message, end='\r')
 
 
 if __name__ == "__main__":
