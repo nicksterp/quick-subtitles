@@ -1,33 +1,39 @@
 import argparse
+import moviepy.editor as mp
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, AudioFileClip
 from datasets import load_dataset
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
-
+import torch
+import os
 def main(input_path, output_path, save_timestamps_path):
-
     # Extract audio from video
     extract_audio_from_video(input_path)
 
     # Generate timestamps with transcriptions from audio
-    timestamps = generate_timestamps("/tmp/audio.mp3")
+    if args.language:
+        timestamps = generate_timestamps("tmp/audio.mp3", language=args.language)
+    else:
+        timestamps = generate_timestamps("tmp/audio.mp3")
 
     if save_timestamps_path:
         with open(save_timestamps_path, "w") as f:
-            f.write(timestamps)
+            f.write(str(timestamps))
 
     # Generate video with captions
     generate_video(timestamps, input_path, output_path)
 
     # Delete tmp/audio.mp3
-    os.remove("/tmp/audio.mp3")
+    os.remove("tmp/audio.mp3")
 
 def extract_audio_from_video(input_path):
+    print("Separating out mp3...")
     video = mp.VideoFileClip(input_path)
     audio = video.audio
-    audio.write_audiofile("/tmp/audio.mp3")
+    audio.write_audiofile("tmp/audio.mp3")
 
 
-def generate_timestamps(input_path):
+def generate_timestamps(input_path, language="en"):
+    print("Generating timestamps...")
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
@@ -51,14 +57,15 @@ def generate_timestamps(input_path):
         return_timestamps=True,
         torch_dtype=torch_dtype,
         device=device,
+        generate_kwargs = {"language":f"<|{language}|>"}
     )
-
-    result = pipe(audio_path, return_timestamps=True)
+    result = pipe("tmp/audio.mp3", return_timestamps=True)
 
     return result
 
 
 def generate_video(timestamps, input_path, output_path):
+    print("Generating video with captions...")
     # Load the background video
     video = VideoFileClip(input_path)
 
@@ -88,7 +95,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process some videos.")
     parser.add_argument("--input", type=str, required=True, help="Input mp4 file path")
     parser.add_argument("--output", type=str, required=True, help="Output mp4 file path")
-    parser.add_argument("--save-timestamps", type=str, required=False, help="Path to save timestamps txt file")
+    parser.add_argument("--save_timestamps", type=str, required=False, help="Path to save timestamps txt file")
+    parser.add_argument("--language", type=str, required=False, help="Language for speech recognition")
     
     args = parser.parse_args()
     main(args.input, args.output, args.save_timestamps)
